@@ -251,7 +251,7 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
       if(state.editing===e.key){
         const row = document.createElement('div'); row.className='edit-row';
         row.innerHTML = '<label class="sr" for="edit-'+e.key+'" style="position:absolute;left:-9999px">New time</label>'+
-          '<input type="time" step="1" id="edit-'+e.key+'" value="'+(t!=null?clock(t):clock(Date.now()))+'">'+
+          '<input type="text" id="edit-'+e.key+'" value="'+(t!=null?clock(t):clock(Date.now()))+'" placeholder="HH:MM:SS" pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}">'+
           '<button class="btn small primary" type="button" data-save="'+e.key+'">Save</button>'+
           (t!=null?'<button class="btn small ghost-danger" type="button" data-clear="'+e.key+'">Clear</button>':'')+
           '<button class="btn small" type="button" data-cancel="1">Cancel</button>';
