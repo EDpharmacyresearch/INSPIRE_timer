@@ -71,8 +71,30 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
 .ev.done .ev-main{cursor:default}
 .ev-tools{display:flex;gap:8px;padding:0 14px 12px 60px;flex-wrap:wrap;align-items:center}
 .ev-tools[hidden]{display:none}
-.edit-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:0 14px 14px 60px}
-.edit-row input{font-family:var(--mono);font-size:1rem;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--ground);color:var(--ink)}
+
+/* Time editor: HH / MM / SS scroll wheels (native pickers on phones) */
+.edit-row{display:flex;flex-direction:column;gap:10px;padding:0 14px 14px 60px}
+.wheels{display:flex;align-items:flex-end;gap:6px}
+.wheel{display:flex;flex-direction:column;gap:3px}
+.wheel-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;text-align:center}
+.wheel select{
+  -webkit-appearance:none;appearance:none;
+  font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.35rem;font-weight:600;
+  min-width:70px;min-height:52px;padding:8px 26px 8px 12px;
+  border:1px solid var(--line);border-radius:10px;color:var(--ink);cursor:pointer;
+  background-color:var(--ground);
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 15px) 55%,calc(100% - 10px) 55%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+}
+.wheel select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.colon{font-family:var(--mono);font-size:1.35rem;font-weight:600;color:var(--muted);padding-bottom:12px}
+.edit-hint{font-size:.75rem;color:var(--muted)}
+.edit-actions{display:flex;gap:8px;flex-wrap:wrap}
+.edit-actions .btn{min-height:44px;flex:1 1 80px}
+@media (max-width:380px){.edit-row,.ev-tools{padding-left:14px}}
+
+.order-warn{background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);border-radius:12px;padding:10px 14px;font-weight:600;font-size:.88rem}
 
 .btn{font:inherit;font-weight:600;font-size:.88rem;border-radius:8px;padding:9px 14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;min-height:40px}
 .btn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
@@ -134,6 +156,7 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
 
   <div class="section-label">Recorded during procedure</div>
   <div class="events" id="events"></div>
+  <div class="order-warn" id="orderWarn" role="status" aria-live="polite" hidden></div>
 
   <div class="section-label">Countdowns</div>
 
@@ -197,26 +220,45 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
 <script>
 (function(){
   const EVENTS = [
-    {key:'meds',  name:'First RSI med pushed',            hint:'Starts the monitoring window'},
-    {key:'blade', name:'Laryngoscope blade first in mouth', hint:'First entry only'},
-    {key:'tube',  name:'Tube successfully placed',        hint:'Starts the 2-min and 10-min countdowns'}
+    {key:'meds',  name:'First RSI med pushed',              short:'RSI med pushed', hint:'Starts the monitoring window'},
+    {key:'blade', name:'Laryngoscope blade first in mouth', short:'Blade in mouth', hint:'First entry only'},
+    {key:'tube',  name:'Tube successfully placed',          short:'Tube placed',    hint:'Starts the 2-min and 10-min countdowns'}
   ];
-  const TWO = 2*60*1000, TEN = 10*60*1000;
+  const KEYS = EVENTS.map(e=>e.key);
+  const TWO = 2*60*1000, TEN = 10*60*1000, HALF_DAY = 12*3600e3;
   const STORE = 'airwayTimer.v1';
 
-  let state = load() || {times:{meds:null,blade:null,tube:null}, history:[], editing:null};
-  state.editing = null;
+  let state = load() || {times:{meds:null,blade:null,tube:null}, history:[]};
+  state.editing = null;   // which event's time editor is open
+  state.draft = null;     // {h,m,s} currently chosen in the wheels (survives re-renders)
   let fired = {cd1:false, cd2:false};
 
-  function load(){ try{ const s = JSON.parse(localStorage.getItem(STORE)); return s && s.times ? s : null; }catch(e){ return null; } }
+  function load(){
+    try{
+      const s = JSON.parse(localStorage.getItem(STORE));
+      if(!s || !s.times) return null;
+      // clean out any unusable values left by earlier versions
+      KEYS.forEach(k=>{ if(typeof s.times[k]!=='number' || !isFinite(s.times[k])) s.times[k]=null; });
+      if(!Array.isArray(s.history)) s.history=[];
+      return s;
+    }catch(e){ return null; }
+  }
   function save(){ try{ localStorage.setItem(STORE, JSON.stringify({times:state.times, history:state.history})); }catch(e){} }
 
   const pad = n => String(n).padStart(2,'0');
-  const clock = ms => { if(ms==null) return '--:--:--'; const d=new Date(ms); return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); };
+  const clock = ms => { if(ms==null || !isFinite(ms)) return '--:--:--'; const d=new Date(ms); return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); };
   const dur = ms => { const neg = ms<0; ms=Math.abs(ms); const s=Math.floor(ms/1000); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return (neg?'−':'')+(h?h+':'+pad(m):m)+':'+pad(x); };
   const hms = ms => { const s=Math.max(0,Math.floor(ms/1000)); return pad(Math.floor(s/3600))+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60); };
   const mmss = ms => { const s=Math.max(0,Math.ceil(ms/1000)); return pad(Math.floor(s/60))+':'+pad(s%60); };
+  const partsOf = ms => { const d=new Date(ms); return {h:d.getHours(), m:d.getMinutes(), s:d.getSeconds()}; };
   const $ = id => document.getElementById(id);
+
+  // option lists for the wheels: 00–23 and 00–59
+  const OPTS = {};
+  [23,59].forEach(max=>{ let s=''; for(let i=0;i<=max;i++) s+='<option value="'+i+'">'+pad(i)+'</option>'; OPTS[max]=s; });
+  const wheel = (part,label,max) =>
+    '<label class="wheel"><span class="wheel-label">'+label+'</span>'+
+    '<select id="edit-'+part+'" data-part="'+part+'" aria-label="'+label+'">'+OPTS[max]+'</select></label>';
 
   // audio cue (only after a tap)
   let actx = null;
@@ -235,6 +277,8 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
     save();
   }
 
+  function closeEditor(){ state.editing=null; state.draft=null; }
+
   function renderEvents(){
     const box = $('events'); box.innerHTML = '';
     const nextKey = (EVENTS.find(e=>state.times[e.key]==null)||{}).key;
@@ -249,12 +293,23 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
           '<span class="time">'+clock(t)+'</span>'+
         '</button>';
       if(state.editing===e.key){
+        const d = state.draft || partsOf(t!=null ? t : Date.now());
         const row = document.createElement('div'); row.className='edit-row';
-        row.innerHTML = '<label class="sr" for="edit-'+e.key+'" style="position:absolute;left:-9999px">New time</label>'+
-          '<input type="text" id="edit-'+e.key+'" value="'+(t!=null?clock(t):clock(Date.now()))+'" placeholder="HH:MM:SS" pattern="[0-9]{2}:[0-9]{2}:[0-9]{2}">'+
-          '<button class="btn small primary" type="button" data-save="'+e.key+'">Save</button>'+
-          (t!=null?'<button class="btn small ghost-danger" type="button" data-clear="'+e.key+'">Clear</button>':'')+
-          '<button class="btn small" type="button" data-cancel="1">Cancel</button>';
+        row.innerHTML =
+          '<div class="wheels" role="group" aria-label="New time for '+e.short+'">'+
+            wheel('h','Hour',23)+'<span class="colon" aria-hidden="true">:</span>'+
+            wheel('m','Min',59)+'<span class="colon" aria-hidden="true">:</span>'+
+            wheel('s','Sec',59)+
+          '</div>'+
+          '<div class="edit-hint">24-hour time · tap a box to scroll to the hour, minute or second</div>'+
+          '<div class="edit-actions">'+
+            '<button class="btn small primary" type="button" data-save="'+e.key+'">Save</button>'+
+            (t!=null?'<button class="btn small ghost-danger" type="button" data-clear="'+e.key+'">Clear</button>':'')+
+            '<button class="btn small" type="button" data-cancel="1">Cancel</button>'+
+          '</div>';
+        row.querySelector('#edit-h').value = d.h;
+        row.querySelector('#edit-m').value = d.m;
+        row.querySelector('#edit-s').value = d.s;
         el.appendChild(row);
       } else {
         const tools = document.createElement('div'); tools.className='ev-tools';
@@ -265,6 +320,12 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
     });
   }
 
+  // remember wheel choices so a re-render (e.g. logging another event) doesn't reset them
+  $('events').addEventListener('change', ev=>{
+    const s = ev.target;
+    if(s.tagName==='SELECT' && s.dataset.part && state.draft) state.draft[s.dataset.part] = Number(s.value);
+  });
+
   $('events').addEventListener('click', ev=>{
     const b = ev.target.closest('button'); if(!b) return;
     primeAudio();
@@ -272,23 +333,53 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
       const key = b.id.slice(4);
       if(state.times[key]!=null) return; // already logged; use Edit to change
       setTime(key, Date.now()); keepAwake(); render();
-    } else if(b.dataset.edit){ state.editing=b.dataset.edit; render(); const i=$('edit-'+b.dataset.edit); i&&i.focus(); }
-    else if(b.dataset.cancel){ state.editing=null; render(); }
-    else if(b.dataset.clear){ setTime(b.dataset.clear, null); state.editing=null; render(); toast('Time cleared'); }
+    } else if(b.dataset.edit){
+      const key = b.dataset.edit;
+      state.editing = key;
+      state.draft = partsOf(state.times[key] ?? Date.now());
+      render();
+      const row = document.querySelector('.edit-row');
+      if(row && row.scrollIntoView) row.scrollIntoView({block:'nearest'});
+    }
+    else if(b.dataset.cancel){ closeEditor(); render(); }
+    else if(b.dataset.clear){ setTime(b.dataset.clear, null); closeEditor(); render(); toast('Time cleared'); }
     else if(b.dataset.save){
-      const key=b.dataset.save, v=$('edit-'+key).value;
-      if(!v){ toast('Enter a time first'); return; }
-      const [h,m,s] = v.split(':').map(Number);
-      const base = new Date(state.times[key] ?? earliest() ?? Date.now());
-      base.setHours(h, m, s||0, 0);
-      // keep within 12h of the other events so a past-midnight case lands on the right day
-      const ref = earliest();
-      if(ref!=null){ if(base - ref > 12*3600e3) base.setDate(base.getDate()-1); else if(ref - base > 12*3600e3) base.setDate(base.getDate()+1); }
-      setTime(key, base.getTime()); state.editing=null; render(); toast('Time updated');
+      const key = b.dataset.save;
+      const h = Number($('edit-h').value), m = Number($('edit-m').value), s = Number($('edit-s').value);
+      if(![h,m,s].every(Number.isInteger)){ toast('Pick an hour, minute and second'); return; }
+      const others = earliest(key);
+      const base = new Date(state.times[key] ?? others ?? Date.now());
+      base.setHours(h, m, s, 0);
+      // keep within 12h of the other events (or now) so a past-midnight case lands on the right day
+      const anchor = others ?? state.times[key] ?? Date.now();
+      if(base - anchor > HALF_DAY) base.setDate(base.getDate()-1);
+      else if(anchor - base > HALF_DAY) base.setDate(base.getDate()+1);
+      setTime(key, base.getTime()); closeEditor(); render();
+      toast(orderIssues().length ? 'Time updated · check the order warning' : 'Time updated');
     }
   });
 
-  function earliest(){ const v=Object.values(state.times).filter(x=>x!=null); return v.length?Math.min(...v):null; }
+  // earliest logged time, optionally ignoring one event
+  function earliest(exceptKey){
+    const v = KEYS.filter(k=>k!==exceptKey).map(k=>state.times[k]).filter(x=>x!=null);
+    return v.length ? Math.min(...v) : null;
+  }
+
+  // events should run meds → blade → tube; list anything out of order
+  function orderIssues(){
+    const T = state.times, out = [];
+    const label = k => EVENTS.find(e=>e.key===k).short;
+    const chk = (a,b) => { if(T[a]!=null && T[b]!=null && T[a]>T[b]) out.push(label(b)+' ('+clock(T[b])+') is earlier than '+label(a)+' ('+clock(T[a])+')'); };
+    chk('meds','blade'); chk('blade','tube');
+    if(T.blade==null) chk('meds','tube');
+    return out;
+  }
+  function renderWarnings(){
+    const issues = orderIssues(), el = $('orderWarn');
+    const txt = issues.length ? 'Check times: '+issues.join('; ')+'.' : '';
+    if(el.textContent!==txt) el.textContent = txt;
+    el.hidden = !txt;
+  }
 
   function tick(){
     const now = Date.now(), T = state.times, start = earliest();
@@ -331,11 +422,11 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
 
   let tt; function toast(msg){ $('toast').textContent=msg; clearTimeout(tt); tt=setTimeout(()=>{$('toast').textContent='';},2500); }
 
-  function render(){ renderEvents(); tick(); }
+  function render(){ renderEvents(); renderWarnings(); tick(); }
 
   $('undoBtn').addEventListener('click',()=>{
     const h = state.history.pop(); if(!h) return;
-    state.times[h.key]=h.prev; state.editing=null; save(); render();
+    state.times[h.key]=h.prev; closeEditor(); save(); render();
     const e = EVENTS.find(x=>x.key===h.key); toast('Undid: '+e.name);
   });
 
@@ -352,6 +443,8 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
       'Meds → blade: '+$('iv1').textContent,
       'Blade → tube: '+$('iv2').textContent,
       'Meds → tube: '+$('iv3').textContent];
+    const issues = orderIssues();
+    if(issues.length) L.push('', 'CHECK — times out of order: '+issues.join('; '));
     return L.join('\n');
   }
   $('copyBtn').addEventListener('click',()=>{
@@ -363,7 +456,7 @@ h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
   $('resetBtn').addEventListener('click',()=>{ $('confirmBox').hidden=false; $('resetBtn').disabled=true; $('cancelReset').focus(); });
   $('cancelReset').addEventListener('click',()=>{ $('confirmBox').hidden=true; $('resetBtn').disabled=false; });
   $('confirmReset').addEventListener('click',()=>{
-    state={times:{meds:null,blade:null,tube:null},history:[],editing:null}; fired={cd1:false,cd2:false};
+    state={times:{meds:null,blade:null,tube:null},history:[],editing:null,draft:null}; fired={cd1:false,cd2:false};
     save(); $('confirmBox').hidden=true; $('resetBtn').disabled=false; $('fallbackText').hidden=true; render(); toast('All times cleared');
   });
 
