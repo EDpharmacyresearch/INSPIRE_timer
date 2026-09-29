@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0B6E99">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;font:14px system-ui,-apple-system,sans-serif}
+[hidden]{display:none!important}
+</style>
+<title>Airway Event Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --ground:#EEF2F5; --surface:#FFFFFF; --line:#D5DDE4; --ink:#0F1B26; --muted:#56687A;
+  --accent:#0B6E99; --accent-ink:#FFFFFF; --accent-soft:#E0EFF6;
+  --ok:#1E7B4F; --ok-soft:#E3F3EA; --warn:#A35F00; --warn-soft:#FBEFD9; --crit:#B3261E; --crit-soft:#FBE4E2;
+  --track:#E1E7ED;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#0B1117; --surface:#141D26; --line:#26323E; --ink:#E6EDF3; --muted:#93A4B5;
+    --accent:#4FB3E0; --accent-ink:#06131B; --accent-soft:#12303F;
+    --ok:#5CCB8F; --ok-soft:#133224; --warn:#F0B454; --warn-soft:#352711; --crit:#FF8A80; --crit-soft:#3A1715;
+    --track:#223040;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#0B1117; --surface:#141D26; --line:#26323E; --ink:#E6EDF3; --muted:#93A4B5;
+  --accent:#4FB3E0; --accent-ink:#06131B; --accent-soft:#12303F;
+  --ok:#5CCB8F; --ok-soft:#133224; --warn:#F0B454; --warn-soft:#352711; --crit:#FF8A80; --crit-soft:#3A1715;
+  --track:#223040;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.4}
+.wrap{max-width:560px;margin:0 auto;padding-inline:16px;padding-block:14px 32px;display:flex;flex-direction:column;gap:14px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+header{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:1.05rem;font-weight:700;letter-spacing:.01em}
+.sub{color:var(--muted);font-size:.8rem}
+.clock{text-align:right}
+.clock .label{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.clock .big{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:2rem;font-weight:600;line-height:1.05}
+.clock .start{font-size:.78rem;color:var(--muted)}
+
+.section-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:600;margin:4px 2px -6px}
+
+.events{display:flex;flex-direction:column;gap:10px}
+.ev{background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.ev-main{width:100%;display:grid;grid-template-columns:34px 1fr auto;align-items:center;gap:12px;padding:16px 14px;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;min-height:76px}
+.ev-main:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.ev .num{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:.9rem;background:var(--accent-soft);color:var(--accent)}
+.ev .name{font-weight:600;font-size:1rem}
+.ev .hint{font-size:.78rem;color:var(--muted)}
+.ev .time{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.3rem;font-weight:600;color:var(--muted)}
+.ev.pending .ev-main{background:var(--accent);color:var(--accent-ink)}
+.ev.pending .num{background:var(--accent-ink);color:var(--accent)}
+.ev.pending .hint,.ev.pending .time{color:var(--accent-ink);opacity:.85}
+.ev.done .num{background:var(--ok-soft);color:var(--ok)}
+.ev.done .time{color:var(--ink)}
+.ev.done .ev-main{cursor:default}
+.ev-tools{display:flex;gap:8px;padding:0 14px 12px 60px;flex-wrap:wrap;align-items:center}
+.ev-tools[hidden]{display:none}
+
+/* Time editor: HH / MM / SS scroll wheels (native pickers on phones) */
+.edit-row{display:flex;flex-direction:column;gap:10px;padding:0 14px 14px 60px}
+.wheels{display:flex;align-items:flex-end;gap:6px}
+.wheel{display:flex;flex-direction:column;gap:3px}
+.wheel-label{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600;text-align:center}
+.wheel select{
+  -webkit-appearance:none;appearance:none;
+  font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.35rem;font-weight:600;
+  min-width:70px;min-height:52px;padding:8px 26px 8px 12px;
+  border:1px solid var(--line);border-radius:10px;color:var(--ink);cursor:pointer;
+  background-color:var(--ground);
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+  background-position:calc(100% - 15px) 55%,calc(100% - 10px) 55%;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+}
+.wheel select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.colon{font-family:var(--mono);font-size:1.35rem;font-weight:600;color:var(--muted);padding-bottom:12px}
+.edit-hint{font-size:.75rem;color:var(--muted)}
+.edit-actions{display:flex;gap:8px;flex-wrap:wrap}
+.edit-actions .btn{min-height:44px;flex:1 1 80px}
+@media (max-width:380px){.edit-row,.ev-tools{padding-left:14px}}
+
+/* Tap counters: number of times each device entered the mouth */
+.counts{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px 6px}
+.counts-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:2px}
+.counts-title{font-weight:600;font-size:1rem}
+.counts-sub{font-size:.75rem;color:var(--muted)}
+.count-row{display:grid;grid-template-columns:1fr auto auto auto;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.count-row:first-of-type{border-top:0}
+.count-name{font-weight:600;font-size:.95rem;line-height:1.2}
+.count-hint{font-size:.74rem;color:var(--muted)}
+.count-num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:1.9rem;font-weight:600;min-width:2.2ch;text-align:center;line-height:1}
+.count-num.zero{color:var(--muted)}
+.count-num.bump{animation:bump .25s ease-out}
+@keyframes bump{40%{transform:scale(1.25)}}
+.count-btn{
+  width:56px;height:56px;border-radius:12px;border:1px solid var(--line);
+  font:inherit;font-size:1.8rem;font-weight:600;line-height:1;cursor:pointer;
+  display:grid;place-items:center;padding:0;
+  touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;
+}
+.count-btn.minus{background:var(--ground);color:var(--ink)}
+.count-btn.plus{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.count-btn:active:not(:disabled){transform:scale(.94)}
+.count-btn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.count-btn:disabled{opacity:.35;cursor:not-allowed}
+@media (prefers-reduced-motion: reduce){.count-num.bump{animation:none}.count-btn:active:not(:disabled){transform:none}}
+.count-row > div:first-child{min-width:0}
+@media (max-width:360px){
+  .count-row{gap:6px}
+  .count-btn{width:46px;height:46px;font-size:1.6rem}
+  .count-num{font-size:1.5rem;min-width:2ch}
+  .count-name{font-size:.86rem}
+}
+.ev-main{touch-action:manipulation}
+/* small phones: keep the full HH:MM:SS visible on each event */
+@media (max-width:360px){
+  .ev-main{grid-template-columns:30px minmax(0,1fr) auto;gap:10px;padding:14px 12px}
+  .ev .name{font-size:.92rem;overflow-wrap:anywhere}
+  .ev .time{font-size:1.1rem}
+}
+
+.order-warn{background:var(--warn-soft);border:1px solid var(--warn);color:var(--warn);border-radius:12px;padding:10px 14px;font-weight:600;font-size:.88rem}
+
+.btn{font:inherit;font-weight:600;font-size:.88rem;border-radius:8px;padding:9px 14px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;min-height:40px}
+.btn:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn.small{padding:5px 10px;min-height:32px;font-size:.8rem}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{background:var(--crit);border-color:var(--crit);color:#fff}
+:root[data-theme="dark"] .btn.danger{color:#1a0706}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn.danger{color:#1a0706}}
+.btn.ghost-danger{color:var(--crit)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+.cd{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.cd-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap}
+.cd-title{font-weight:600}
+.pill{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:3px 9px;border-radius:999px;background:var(--track);color:var(--muted)}
+.pill.open{background:var(--warn-soft);color:var(--warn)}
+.pill.running{background:var(--accent-soft);color:var(--accent)}
+.pill.closed{background:var(--ok-soft);color:var(--ok)}
+.cd-big{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:2.4rem;font-weight:600;line-height:1}
+.cd-cap{font-size:.8rem;color:var(--muted)}
+.bar{height:8px;border-radius:99px;background:var(--track);overflow:hidden}
+.bar > i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s linear}
+.bar.warn > i{background:var(--warn)}
+.bar.done > i{background:var(--ok)}
+.stamps{display:grid;grid-template-columns:1fr auto;gap:4px 12px;font-size:.85rem}
+.stamps dt{color:var(--muted)}
+.stamps dd{margin:0;font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.cd.flash{animation:flash 1s ease-in-out 3}
+@keyframes flash{50%{background:var(--ok-soft);border-color:var(--ok)}}
+@media (prefers-reduced-motion: reduce){.cd.flash{animation:none;border-color:var(--ok)}.bar > i{transition:none}}
+
+.intervals{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.intervals .stamps{font-size:.9rem}
+
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+.actions .btn{flex:1 1 120px}
+.confirm{background:var(--crit-soft);border:1px solid var(--crit);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.confirm p{margin:0;font-weight:600;color:var(--crit)}
+.confirm .row{display:flex;gap:8px;flex-wrap:wrap}
+.confirm .row .btn{flex:1 1 120px}
+.toast{font-size:.82rem;color:var(--ok);min-height:1.2em;text-align:center}
+.foot{font-size:.74rem;color:var(--muted);text-align:center}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Airway Event Timer</h1>
+      <div class="sub">Tap each event as it happens</div>
+    </div>
+    <div class="clock">
+      <div class="label">Elapsed</div>
+      <div class="big" id="elapsed">00:00:00</div>
+      <div class="start">Start <span class="mono" id="startTime">--:--:--</span></div>
+    </div>
+  </header>
+
+  <div class="section-label">Recorded during procedure</div>
+  <div class="events" id="events"></div>
+  <div class="order-warn" id="orderWarn" role="status" aria-live="polite" hidden></div>
+
+  <!-- Moved into the event list (right after the blade event) by renderEvents() -->
+  <section class="counts" id="counts" aria-labelledby="countsTitle">
+    <div class="counts-head">
+      <span class="counts-title" id="countsTitle">Number of times entered mouth</span>
+      <span class="counts-sub">Tap + each time</span>
+    </div>
+    <div id="countRows"></div>
+  </section>
+
+  <div class="section-label">Countdowns</div>
+
+  <section class="cd" id="cd1">
+    <div class="cd-head">
+      <span class="cd-title">Meds → 2 min after tube</span>
+      <span class="pill" id="cd1Pill">Waiting</span>
+    </div>
+    <div class="cd-big" id="cd1Big">--:--</div>
+    <div class="cd-cap" id="cd1Cap">Starts when RSI med is pushed</div>
+    <div class="bar" id="cd1Bar"><i></i></div>
+    <dl class="stamps">
+      <dt>Window opened (meds)</dt><dd id="cd1Open">--:--:--</dd>
+      <dt>Window closes (tube + 2:00)</dt><dd id="cd1Close">--:--:--</dd>
+    </dl>
+  </section>
+
+  <section class="cd" id="cd2">
+    <div class="cd-head">
+      <span class="cd-title">10 min after tube placement</span>
+      <span class="pill" id="cd2Pill">Waiting</span>
+    </div>
+    <div class="cd-big" id="cd2Big">10:00</div>
+    <div class="cd-cap" id="cd2Cap">Starts when tube is placed</div>
+    <div class="bar" id="cd2Bar"><i></i></div>
+    <dl class="stamps">
+      <dt>Started (tube placed)</dt><dd id="cd2Open">--:--:--</dd>
+      <dt>10-min mark</dt><dd id="cd2Close">--:--:--</dd>
+    </dl>
+  </section>
+
+  <div class="section-label">Intervals</div>
+  <section class="intervals">
+    <dl class="stamps">
+      <dt>Meds → blade in mouth</dt><dd id="iv1">—</dd>
+      <dt>Blade in mouth → tube placed</dt><dd id="iv2">—</dd>
+      <dt>Meds → tube placed</dt><dd id="iv3">—</dd>
+    </dl>
+  </section>
+
+  <div class="actions">
+    <button class="btn" id="undoBtn" type="button">Undo last</button>
+    <button class="btn primary" id="copyBtn" type="button">Copy summary</button>
+    <button class="btn ghost-danger" id="resetBtn" type="button">Reset all</button>
+  </div>
+
+  <div class="confirm" id="confirmBox" hidden>
+    <p>Clear every time, count and countdown? This can't be undone.</p>
+    <div class="row">
+      <button class="btn" id="cancelReset" type="button">Keep times</button>
+      <button class="btn danger" id="confirmReset" type="button">Yes, reset everything</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <textarea id="fallbackText" hidden readonly style="width:100%;min-height:180px;font-family:var(--mono);font-size:.8rem;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px"></textarea>
+
+  <div class="foot">Times are saved in this browser only, so a refresh won't lose them. No patient identifiers are stored.</div>
+</div>
+
+<script>
+(function(){
+  const EVENTS = [
+    {key:'meds',  name:'First RSI med pushed',              short:'RSI med pushed', hint:'Starts the monitoring window'},
+    {key:'blade', name:'Laryngoscope blade first in mouth', short:'Blade in mouth', hint:'First entry only'},
+    {key:'tube',  name:'Tube successfully placed',          short:'Tube placed',    hint:'Starts the 2-min and 10-min countdowns'}
+  ];
+  const KEYS = EVENTS.map(e=>e.key);
+  // "NUMBER of times ... entered the patient's mouth" counters
+  const COUNTERS = [
+    {key:'blade',  name:'Laryngoscope blade', hint:'Entries into mouth',  sum:'NUMBER of times a laryngoscope blade entered the mouth'},
+    {key:'bougie', name:'Bougie',             hint:'0 = not used',        sum:'NUMBER of times a bougie entered the mouth'},
+    {key:'tube',   name:'Endotracheal tube',  hint:'Entries into mouth',  sum:'NUMBER of times an endotracheal tube entered the mouth'}
+  ];
+  const COUNT_KEYS = COUNTERS.map(c=>c.key);
+  const COUNT_MAX = 99;
+  // logging these events fills in the first count automatically
+  const AUTO_COUNT = {blade:'blade', tube:'tube'};
+  const TWO = 2*60*1000, TEN = 10*60*1000, HALF_DAY = 12*3600e3;
+  const STORE = 'airwayTimer.v1';
+
+  const zeroCounts = () => ({blade:0, bougie:0, tube:0});
+  let state = load() || {times:{meds:null,blade:null,tube:null}, counts:zeroCounts(), history:[]};
+  state.editing = null;   // which event's time editor is open
+  state.draft = null;     // {h,m,s} currently chosen in the wheels (survives re-renders)
+  let fired = {cd1:false, cd2:false};
+
+  function load(){
+    try{
+      const s = JSON.parse(localStorage.getItem(STORE));
+      if(!s || !s.times) return null;
+      // clean out any unusable values left by earlier versions
+      KEYS.forEach(k=>{ if(typeof s.times[k]!=='number' || !isFinite(s.times[k])) s.times[k]=null; });
+      if(!Array.isArray(s.history)) s.history=[];
+      const c = (s.counts && typeof s.counts==='object') ? s.counts : {};
+      s.counts = zeroCounts();
+      COUNT_KEYS.forEach(k=>{ const n=Number(c[k]); if(Number.isInteger(n) && n>=0) s.counts[k]=Math.min(n,COUNT_MAX); });
+      return s;
+    }catch(e){ return null; }
+  }
+  function save(){ try{ localStorage.setItem(STORE, JSON.stringify({times:state.times, counts:state.counts, history:state.history})); }catch(e){} }
+
+  const pad = n => String(n).padStart(2,'0');
+  const clock = ms => { if(ms==null || !isFinite(ms)) return '--:--:--'; const d=new Date(ms); return pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); };
+  const dur = ms => { const s=Math.floor(Math.abs(ms)/1000), neg = ms<0 && s>0; const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return (neg?'−':'')+(h?h+':'+pad(m):m)+':'+pad(x); };
+  // whole-second value, matching what's shown on screen (tapped times carry milliseconds, typed times don't)
+  const sec = ms => Math.floor(ms/1000)*1000;
+  const hms = ms => { const s=Math.max(0,Math.floor(ms/1000)); return pad(Math.floor(s/3600))+':'+pad(Math.floor(s%3600/60))+':'+pad(s%60); };
+  const mmss = ms => { const s=Math.max(0,Math.ceil(ms/1000)); return pad(Math.floor(s/60))+':'+pad(s%60); };
+  const partsOf = ms => { const d=new Date(ms); return {h:d.getHours(), m:d.getMinutes(), s:d.getSeconds()}; };
+  const $ = id => document.getElementById(id);
+
+  // option lists for the wheels: 00–23 and 00–59
+  const OPTS = {};
+  [23,59].forEach(max=>{ let s=''; for(let i=0;i<=max;i++) s+='<option value="'+i+'">'+pad(i)+'</option>'; OPTS[max]=s; });
+  const wheel = (part,label,max) =>
+    '<label class="wheel"><span class="wheel-label">'+label+'</span>'+
+    '<select id="edit-'+part+'" data-part="'+part+'" aria-label="'+label+'">'+OPTS[max]+'</select></label>';
+
+  // audio cue (only after a tap)
+  let actx = null;
+  function primeAudio(){ try{ if(!actx){ const C = window.AudioContext||window.webkitAudioContext; if(C) actx = new C(); } if(actx && actx.state==='suspended') actx.resume(); }catch(e){} }
+  function beep(){ try{ if(!actx) return; [0,0.35,0.7].forEach(t=>{ const o=actx.createOscillator(), g=actx.createGain(); o.frequency.value=880; o.connect(g); g.connect(actx.destination); const s=actx.currentTime+t; g.gain.setValueAtTime(0.0001,s); g.gain.exponentialRampToValueAtTime(0.3,s+0.02); g.gain.exponentialRampToValueAtTime(0.0001,s+0.25); o.start(s); o.stop(s+0.3); }); }catch(e){} try{ navigator.vibrate && navigator.vibrate([200,100,200]); }catch(e){} }
+
+  // keep screen awake while in use
+  let wake = null;
+  async function keepAwake(){ try{ if('wakeLock' in navigator && !wake){ wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release',()=>{wake=null;}); } }catch(e){} }
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible' && Object.values(state.times).some(v=>v)) keepAwake(); });
+
+  function setTime(key, val){
+    const entry = {key, prev: state.times[key]};
+    // first time this event is logged: start its counter at 1 if it's still 0
+    const ck = AUTO_COUNT[key];
+    if(entry.prev==null && val!=null && ck && state.counts[ck]<1){
+      entry.auto = {key:ck, prev:state.counts[ck]};
+      state.counts[ck] = 1;
+    }
+    state.history.push(entry);
+    if(state.history.length>100) state.history.shift();
+    state.times[key] = val;
+    save();
+  }
+
+  // ---- tap counters ----
+  const countsEl = $('counts');
+  (function buildCounters(){
+    $('countRows').innerHTML = COUNTERS.map(c=>
+      '<div class="count-row">'+
+        '<div><div class="count-name">'+c.name+'</div><div class="count-hint">'+c.hint+'</div></div>'+
+        '<button class="count-btn minus" type="button" data-count="'+c.key+'" data-step="-1" aria-label="Subtract one '+c.name+' entry">−</button>'+
+        '<span class="count-num" id="count-'+c.key+'" aria-live="polite" aria-label="'+c.name+' count">0</span>'+
+        '<button class="count-btn plus" type="button" data-count="'+c.key+'" data-step="1" aria-label="Add one '+c.name+' entry">+</button>'+
+      '</div>').join('');
+  })();
+
+  function renderCounts(bumpKey){
+    COUNTERS.forEach(c=>{
+      const n = state.counts[c.key], el = $('count-'+c.key);
+      if(el.textContent!==String(n)) el.textContent = n;
+      el.classList.toggle('zero', n===0);
+      countsEl.querySelector('[data-count="'+c.key+'"][data-step="-1"]').disabled = n<=0;
+      countsEl.querySelector('[data-count="'+c.key+'"][data-step="1"]').disabled = n>=COUNT_MAX;
+      if(c.key===bumpKey){ el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+    });
+  }
+
+  countsEl.addEventListener('click', ev=>{
+    const b = ev.target.closest('button[data-count]'); if(!b || b.disabled) return;
+    primeAudio();
+    const k = b.dataset.count, n = Math.max(0, Math.min(COUNT_MAX, state.counts[k] + Number(b.dataset.step)));
+    if(n===state.counts[k]) return;
+    state.counts[k] = n; save(); renderCounts(k);
+    try{ navigator.vibrate && navigator.vibrate(15); }catch(e){}
+  });
+
+  function closeEditor(){ state.editing=null; state.draft=null; }
+
+  function renderEvents(){
+    const box = $('events'); box.innerHTML = '';
+    const nextKey = (EVENTS.find(e=>state.times[e.key]==null)||{}).key;
+    EVENTS.forEach((e,i)=>{
+      const t = state.times[e.key];
+      const el = document.createElement('div');
+      el.className = 'ev ' + (t!=null ? 'done' : (e.key===nextKey ? 'pending' : ''));
+      el.innerHTML =
+        '<button class="ev-main" type="button" id="log-'+e.key+'"'+(t!=null?' aria-disabled="true"':'')+'>'+
+          '<span class="num">'+(t!=null?'✓':(i+1))+'</span>'+
+          '<span><span class="name">'+e.name+'</span><br><span class="hint">'+(t!=null?'Logged':'Tap to log · '+e.hint)+'</span></span>'+
+          '<span class="time">'+clock(t)+'</span>'+
+        '</button>';
+      if(state.editing===e.key){
+        const d = state.draft || partsOf(t!=null ? t : Date.now());
+        const row = document.createElement('div'); row.className='edit-row';
+        row.innerHTML =
+          '<div class="wheels" role="group" aria-label="New time for '+e.short+'">'+
+            wheel('h','Hour',23)+'<span class="colon" aria-hidden="true">:</span>'+
+            wheel('m','Min',59)+'<span class="colon" aria-hidden="true">:</span>'+
+            wheel('s','Sec',59)+
+          '</div>'+
+          '<div class="edit-hint">24-hour time · tap a box to scroll to the hour, minute or second</div>'+
+          '<div class="edit-actions">'+
+            '<button class="btn small primary" type="button" data-save="'+e.key+'">Save</button>'+
+            (t!=null?'<button class="btn small ghost-danger" type="button" data-clear="'+e.key+'">Clear</button>':'')+
+            '<button class="btn small" type="button" data-cancel="1">Cancel</button>'+
+          '</div>';
+        row.querySelector('#edit-h').value = d.h;
+        row.querySelector('#edit-m').value = d.m;
+        row.querySelector('#edit-s').value = d.s;
+        el.appendChild(row);
+      } else {
+        const tools = document.createElement('div'); tools.className='ev-tools';
+        tools.innerHTML = '<button class="btn small" type="button" data-edit="'+e.key+'">'+(t!=null?'Edit time':'Enter time manually')+'</button>';
+        el.appendChild(tools);
+      }
+      box.appendChild(el);
+      if(e.key==='blade') box.appendChild(countsEl); // counters sit right after the blade event
+    });
+    renderCounts();
+  }
+
+  // remember wheel choices so a re-render (e.g. logging another event) doesn't reset them
+  $('events').addEventListener('change', ev=>{
+    const s = ev.target;
+    if(s.tagName==='SELECT' && s.dataset.part && state.draft) state.draft[s.dataset.part] = Number(s.value);
+  });
+
+  $('events').addEventListener('click', ev=>{
+    const b = ev.target.closest('button'); if(!b) return;
+    primeAudio();
+    if(b.id && b.id.startsWith('log-')){
+      const key = b.id.slice(4);
+      if(state.times[key]!=null) return; // already logged; use Edit to change
+      setTime(key, Date.now()); keepAwake(); render();
+    } else if(b.dataset.edit){
+      const key = b.dataset.edit;
+      state.editing = key;
+      state.draft = partsOf(state.times[key] ?? Date.now());
+      render();
+      const row = document.querySelector('.edit-row');
+      if(row && row.scrollIntoView) row.scrollIntoView({block:'nearest'});
+    }
+    else if(b.dataset.cancel){ closeEditor(); render(); }
+    else if(b.dataset.clear){ setTime(b.dataset.clear, null); closeEditor(); render(); toast('Time cleared'); }
+    else if(b.dataset.save){
+      const key = b.dataset.save;
+      const h = Number($('edit-h').value), m = Number($('edit-m').value), s = Number($('edit-s').value);
+      if(![h,m,s].every(Number.isInteger)){ toast('Pick an hour, minute and second'); return; }
+      const others = earliest(key);
+      const base = new Date(state.times[key] ?? others ?? Date.now());
+      base.setHours(h, m, s, 0);
+      // keep within 12h of the other events (or now) so a past-midnight case lands on the right day
+      const anchor = others ?? state.times[key] ?? Date.now();
+      if(base - anchor > HALF_DAY) base.setDate(base.getDate()-1);
+      else if(anchor - base > HALF_DAY) base.setDate(base.getDate()+1);
+      setTime(key, base.getTime()); closeEditor(); render();
+      toast(orderIssues().length ? 'Time updated · check the order warning' : 'Time updated');
+    }
+  });
+
+  // earliest logged time, optionally ignoring one event
+  function earliest(exceptKey){
+    const v = KEYS.filter(k=>k!==exceptKey).map(k=>state.times[k]).filter(x=>x!=null);
+    return v.length ? Math.min(...v) : null;
+  }
+
+  // events should run meds → blade → tube; list anything out of order
+  function orderIssues(){
+    const T = state.times, out = [];
+    const label = k => EVENTS.find(e=>e.key===k).short;
+    const chk = (a,b) => { if(T[a]!=null && T[b]!=null && sec(T[a])>sec(T[b])) out.push(label(b)+' ('+clock(T[b])+') is earlier than '+label(a)+' ('+clock(T[a])+')'); };
+    chk('meds','blade'); chk('blade','tube');
+    if(T.blade==null) chk('meds','tube');
+    return out;
+  }
+  function renderWarnings(){
+    const issues = orderIssues(), el = $('orderWarn');
+    const txt = issues.length ? 'Check times: '+issues.join('; ')+'.' : '';
+    if(el.textContent!==txt) el.textContent = txt;
+    el.hidden = !txt;
+  }
+
+  function tick(){
+    const now = Date.now(), T = state.times, start = earliest();
+    $('elapsed').textContent = start!=null ? hms(now-start) : '00:00:00';
+    $('startTime').textContent = clock(start);
+
+    // Countdown 1: meds → tube + 2 min
+    const p1=$('cd1Pill'), b1=$('cd1Big'), c1=$('cd1Cap'), bar1=$('cd1Bar');
+    $('cd1Open').textContent = clock(T.meds);
+    $('cd1Close').textContent = T.tube!=null ? clock(T.tube+TWO) : '--:--:--';
+    bar1.className='bar';
+    if(T.meds==null && T.tube==null){ p1.className='pill'; p1.textContent='Waiting'; b1.textContent='--:--'; c1.textContent='Starts when RSI med is pushed'; bar1.firstChild.style.width='0'; }
+    else if(T.tube==null){ p1.className='pill open'; p1.textContent='Window open'; b1.textContent=mmss(now-T.meds); c1.textContent='Since meds pushed · track lowest SpO₂ and SBP'; bar1.classList.add('warn'); bar1.firstChild.style.width='100%'; }
+    else{
+      const left = T.tube+TWO-now;
+      if(left>0){ p1.className='pill running'; p1.textContent='Closing'; b1.textContent=mmss(left); c1.textContent='Until window closes (tube + 2:00)'; bar1.firstChild.style.width=(100*(1-left/TWO))+'%'; fired.cd1=false; }
+      else{ p1.className='pill closed'; p1.textContent='Closed'; b1.textContent='00:00'; c1.textContent='Window closed at '+clock(T.tube+TWO)+(T.meds!=null?' · total '+dur(T.tube+TWO-T.meds):''); bar1.classList.add('done'); bar1.firstChild.style.width='100%';
+        if(!fired.cd1 && now-(T.tube+TWO)<3000){ fired.cd1=true; flash('cd1'); beep(); } else fired.cd1=true; }
+    }
+
+    // Countdown 2: tube + 10 min
+    const p2=$('cd2Pill'), b2=$('cd2Big'), c2=$('cd2Cap'), bar2=$('cd2Bar');
+    $('cd2Open').textContent = clock(T.tube);
+    $('cd2Close').textContent = T.tube!=null ? clock(T.tube+TEN) : '--:--:--';
+    bar2.className='bar';
+    if(T.tube==null){ p2.className='pill'; p2.textContent='Waiting'; b2.textContent='10:00'; c2.textContent='Starts when tube is placed'; bar2.firstChild.style.width='0'; }
+    else{
+      const left = T.tube+TEN-now;
+      if(left>0){ p2.className='pill running'; p2.textContent='Running'; b2.textContent=mmss(left); c2.textContent='Remaining until 10-min mark'; bar2.firstChild.style.width=(100*(1-left/TEN))+'%'; fired.cd2=false; }
+      else{ p2.className='pill closed'; p2.textContent='Complete'; b2.textContent='00:00'; c2.textContent='10-min mark reached at '+clock(T.tube+TEN); bar2.classList.add('done'); bar2.firstChild.style.width='100%';
+        if(!fired.cd2 && now-(T.tube+TEN)<3000){ fired.cd2=true; flash('cd2'); beep(); } else fired.cd2=true; }
+    }
+
+    const iv=(a,b)=> (T[a]!=null&&T[b]!=null) ? dur(sec(T[b])-sec(T[a])) : '—';
+    $('iv1').textContent=iv('meds','blade'); $('iv2').textContent=iv('blade','tube'); $('iv3').textContent=iv('meds','tube');
+    $('undoBtn').disabled = state.history.length===0;
+  }
+
+  function flash(id){ const el=$(id); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }
+
+  let tt; function toast(msg){ $('toast').textContent=msg; clearTimeout(tt); tt=setTimeout(()=>{$('toast').textContent='';},2500); }
+
+  function render(){ renderEvents(); renderWarnings(); tick(); }
+
+  $('undoBtn').addEventListener('click',()=>{
+    const h = state.history.pop(); if(!h) return;
+    state.times[h.key]=h.prev;
+    // take back the automatic first count that came with logging this event
+    if(h.auto) state.counts[h.auto.key] = Math.max(h.auto.prev, state.counts[h.auto.key]-(1-h.auto.prev));
+    closeEditor(); save(); render();
+    const e = EVENTS.find(x=>x.key===h.key); toast('Undid: '+e.name);
+  });
+
+  function summary(){
+    const T=state.times, d=new Date(earliest()??Date.now());
+    const L=['Airway Event Times — '+d.toLocaleDateString(),
+      'First RSI med pushed: '+clock(T.meds),
+      'Laryngoscope blade first entered mouth: '+clock(T.blade),
+      'Tube successfully placed in airway: '+clock(T.tube),
+      ...COUNTERS.map(c=>c.sum+': '+state.counts[c.key]+(c.key==='bougie'&&state.counts[c.key]===0?' (not used)':'')),
+      '',
+      'Monitoring window: '+clock(T.meds)+' to '+(T.tube!=null?clock(T.tube+TWO):'--:--:--')+' (meds to tube + 2 min)',
+      '10-min post-tube mark: '+(T.tube!=null?clock(T.tube+TEN):'--:--:--'),
+      '',
+      'Meds → blade: '+$('iv1').textContent,
+      'Blade → tube: '+$('iv2').textContent,
+      'Meds → tube: '+$('iv3').textContent];
+    const issues = orderIssues();
+    if(issues.length) L.push('', 'CHECK — times out of order: '+issues.join('; '));
+    return L.join('\n');
+  }
+  $('copyBtn').addEventListener('click',()=>{
+    const text = summary(), fb=$('fallbackText');
+    const fallback=()=>{ fb.hidden=false; fb.value=text; fb.focus(); fb.select(); toast('Select all and copy the text below'); };
+    try{ navigator.clipboard.writeText(text).then(()=>{ fb.hidden=true; toast('Summary copied'); }, fallback); }catch(e){ fallback(); }
+  });
+
+  $('resetBtn').addEventListener('click',()=>{ $('confirmBox').hidden=false; $('resetBtn').disabled=true; $('cancelReset').focus(); });
+  $('cancelReset').addEventListener('click',()=>{ $('confirmBox').hidden=true; $('resetBtn').disabled=false; });
+  $('confirmReset').addEventListener('click',()=>{
+    state={times:{meds:null,blade:null,tube:null},counts:zeroCounts(),history:[],editing:null,draft:null}; fired={cd1:false,cd2:false};
+    save(); $('confirmBox').hidden=true; $('resetBtn').disabled=false; $('fallbackText').hidden=true; render(); toast('All times cleared');
+  });
+
+  // don't re-alert for countdowns that finished before the page loaded
+  if(state.times.tube!=null){ const n=Date.now(); fired.cd1 = n>state.times.tube+TWO; fired.cd2 = n>state.times.tube+TEN; }
+  render();
+  setInterval(tick, 250);
+})();
+</script>
+</body>
+</html>
